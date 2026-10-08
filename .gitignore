@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test
+coverage/
+
+# Temporary & Debug files
+*.tmp
+.cache/
+debug-*.json
+scratch-*.mjs
+test-*.mjs
+antigravity-accounts*.json
+antigravity-signature-cache*.json
+antigravity-logs/

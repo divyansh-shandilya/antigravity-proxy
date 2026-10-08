@@ -1,0 +1,59 @@
+{
+  "language_models": {
+    "openai_compatible": {
+      "Antigravity": {
+        "api_url": "http://localhost:3000/v1",
+        "available_models": [
+          {
+            "name": "antigravity-gemini-3.1-pro",
+            "display_name": "Gemini 3.1 Pro (Antigravity)",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65535,
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": true
+            }
+          },
+          {
+            "name": "antigravity-gemini-3.8-flash",
+            "display_name": "Gemini 3.8 Flash (Antigravity)",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": true
+            }
+          },
+          {
+            "name": "antigravity-claude-sonnet-4-6",
+            "display_name": "Claude Sonnet 4.6 Thinking (Antigravity)",
+            "max_tokens": 200000,
+            "max_output_tokens": 64000,
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": true
+            }
+          },
+          {
+            "name": "antigravity-claude-opus-4-6",
+            "display_name": "Claude Opus 4.6 Thinking (Antigravity)",
+            "max_tokens": 200000,
+            "max_output_tokens": 64000,
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": true
+            }
+          }
+        ]
+      }
+    }
+  }
+}

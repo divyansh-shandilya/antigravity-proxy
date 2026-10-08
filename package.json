@@ -1,0 +1,54 @@
+{
+  "name": "openai-proxy-for-antigravity",
+  "version": "1.0.0",
+  "description": "OpenAI and Anthropic compatible proxy for Google Antigravity (Cloud Code) API with SSE streaming and concurrency queuing",
+  "main": "dist/server.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/copy-dashboard.js",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "auth": "tsx scripts/auth.ts",
+    "generate-zed-config": "tsx scripts/generate-zed-config.ts",
+    "install-service": "bash scripts/install-macos-service.sh",
+    "uninstall-service": "bash scripts/uninstall-macos-service.sh",
+    "docker:build": "docker build -f docker/Dockerfile -t antigravity-proxy .",
+    "docker:up": "docker-compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker-compose -f docker/docker-compose.yml down",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "antigravity",
+    "google",
+    "cloudcode",
+    "gemini",
+    "claude",
+    "claude-desktop",
+    "proxy",
+    "openai",
+    "anthropic",
+    "opencode",
+    "zed",
+    "ai",
+    "llm"
+  ],
+  "author": "Alessandro Bruno <https://github.com/alessandrobrunoh>",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fastify/static": "^8.0.2",
+    "@openauthjs/openauth": "^0.4.3",
+    "fastify": "^5.2.0",
+    "open": "^11.0.0",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
