@@ -1,0 +1,17 @@
+{
+  "name": "antigravity-cloudflare-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker proxy for Google Antigravity supporting OpenAI and Anthropic APIs with SSE streaming",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:preview": "wrangler deploy --temporary"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.148.0"
+  }
+}

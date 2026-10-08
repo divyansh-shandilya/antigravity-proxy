@@ -1,0 +1,9 @@
+name = "antigravity-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ANTIGRAVITY_PROJECT_ID = "rising-fact-p41fc"
+# Set PROXY_API_KEY if you want to require authorization for your worker
+# PROXY_API_KEY = "sk-ant-antigravity"

@@ -437,7 +437,30 @@ export function migrateV2ToV3(v2: AccountStorage): AccountStorageV3 {
 export async function loadAccounts(): Promise<AccountStorageV3 | null> {
   try {
     const path = getStoragePath();
-    const content = await fs.readFile(path, "utf-8");
+    let content: string;
+    try {
+      content = await fs.readFile(path, "utf-8");
+    } catch (readErr) {
+      if (process.env.ANTIGRAVITY_ACCOUNTS_BASE64) {
+        log.info("Loading accounts from ANTIGRAVITY_ACCOUNTS_BASE64 environment variable");
+        content = Buffer.from(process.env.ANTIGRAVITY_ACCOUNTS_BASE64, "base64").toString("utf-8");
+        try {
+          const configDir = dirname(path);
+          await fs.mkdir(configDir, { recursive: true });
+          await fs.writeFile(path, content, "utf-8");
+        } catch {}
+      } else if (process.env.ANTIGRAVITY_ACCOUNTS_JSON) {
+        log.info("Loading accounts from ANTIGRAVITY_ACCOUNTS_JSON environment variable");
+        content = process.env.ANTIGRAVITY_ACCOUNTS_JSON;
+        try {
+          const configDir = dirname(path);
+          await fs.mkdir(configDir, { recursive: true });
+          await fs.writeFile(path, content, "utf-8");
+        } catch {}
+      } else {
+        throw readErr;
+      }
+    }
     const data = JSON.parse(content) as AnyAccountStorage;
 
     if (!Array.isArray(data.accounts)) {
@@ -542,7 +565,18 @@ export async function saveAccounts(storage: AccountStorageV3): Promise<void> {
 async function loadAccountsUnsafe(): Promise<AccountStorageV3 | null> {
   try {
     const path = getStoragePath();
-    const content = await fs.readFile(path, "utf-8");
+    let content: string;
+    try {
+      content = await fs.readFile(path, "utf-8");
+    } catch (readErr) {
+      if (process.env.ANTIGRAVITY_ACCOUNTS_BASE64) {
+        content = Buffer.from(process.env.ANTIGRAVITY_ACCOUNTS_BASE64, "base64").toString("utf-8");
+      } else if (process.env.ANTIGRAVITY_ACCOUNTS_JSON) {
+        content = process.env.ANTIGRAVITY_ACCOUNTS_JSON;
+      } else {
+        return null;
+      }
+    }
     const parsed = JSON.parse(content);
 
     if (parsed.version === 1) {
