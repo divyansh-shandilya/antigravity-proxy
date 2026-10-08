@@ -254,7 +254,7 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
       .map((t: any) => ({
         name: t.function.name,
         description: t.function.description || '',
-        parameters: sanitizeSchema(t.function.parameters),
+        parameters: toGeminiSchema(t.function.parameters),
       }));
     if (fns.length > 0) {
       tools = [{ functionDeclarations: fns }];
@@ -408,7 +408,7 @@ async function handleAnthropicMessages(request: Request, env: Env): Promise<Resp
     const fns = body.tools.map((t: any) => ({
       name: t.name,
       description: t.description || '',
-      parameters: sanitizeSchema(t.input_schema),
+      parameters: toGeminiSchema(t.input_schema),
     }));
     tools = [{ functionDeclarations: fns }];
   }
@@ -706,20 +706,69 @@ async function collectStreamText(
   return { text: fullText, reasoning: fullReasoning || undefined };
 }
 
-function sanitizeSchema(schema: any): any {
-  if (!schema || typeof schema !== 'object') return schema;
-  const cleaned: Record<string, any> = {};
-  for (const [key, val] of Object.entries(schema)) {
-    if (['default', 'anyOf', 'oneOf', 'allOf'].includes(key)) continue;
-    if (key === 'properties' && typeof val === 'object' && val !== null) {
-      const props: Record<string, any> = {};
-      for (const [pKey, pVal] of Object.entries(val)) {
-        props[pKey] = sanitizeSchema(pVal);
-      }
-      cleaned[key] = props;
-    } else {
-      cleaned[key] = val;
+function toGeminiSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  const input = schema as Record<string, any>;
+  const result: Record<string, any> = {};
+
+  const propertyNames = new Set<string>();
+  if (input.properties && typeof input.properties === 'object') {
+    for (const propName of Object.keys(input.properties)) {
+      propertyNames.add(propName);
     }
   }
-  return cleaned;
+
+  // Type handling (convert to uppercase: OBJECT, STRING, NUMBER, INTEGER, BOOLEAN, ARRAY)
+  if (input.type) {
+    if (typeof input.type === 'string') {
+      result.type = input.type.toUpperCase();
+    } else if (Array.isArray(input.type)) {
+      const types = input.type.filter((t: any) => typeof t === 'string' && t.toLowerCase() !== 'null');
+      if (input.type.some((t: any) => t === 'null')) result.nullable = true;
+      if (types.length > 0) result.type = types[0].toUpperCase();
+    }
+  }
+
+  if (input.const !== undefined && !input.enum) result.enum = [input.const];
+  if (typeof input.description === 'string') result.description = input.description;
+  if (Array.isArray(input.enum)) result.enum = input.enum;
+  if (typeof input.format === 'string') result.format = input.format;
+  if (typeof input.nullable === 'boolean') result.nullable = input.nullable;
+  if (typeof input.pattern === 'string') result.pattern = input.pattern;
+  if (typeof input.minLength === 'number') result.minLength = input.minLength;
+  if (typeof input.maxLength === 'number') result.maxLength = input.maxLength;
+  if (typeof input.minItems === 'number') result.minItems = input.minItems;
+  if (typeof input.maxItems === 'number') result.maxItems = input.maxItems;
+
+  // Convert properties recursively
+  if (input.properties && typeof input.properties === 'object') {
+    const props: Record<string, any> = {};
+    for (const [propName, propSchema] of Object.entries(input.properties)) {
+      props[propName] = toGeminiSchema(propSchema);
+    }
+    result.properties = props;
+  }
+
+  // Convert items recursively
+  if (input.items && typeof input.items === 'object') {
+    result.items = toGeminiSchema(input.items);
+  }
+
+  // Required properties (filter to only defined properties)
+  if (Array.isArray(input.required) && propertyNames.size > 0) {
+    const valid = input.required.filter((p: any) => typeof p === 'string' && propertyNames.has(p));
+    if (valid.length > 0) result.required = valid;
+  }
+
+  // Fallback type inference
+  if (!result.type) {
+    if (result.properties) result.type = 'OBJECT';
+    else if (result.items) result.type = 'ARRAY';
+    else result.type = 'STRING';
+  }
+
+  if (result.type === 'ARRAY' && !result.items) result.items = { type: 'STRING' };
+  if (result.type === 'OBJECT' && !result.properties) result.properties = {};
+
+  return result;
 }
