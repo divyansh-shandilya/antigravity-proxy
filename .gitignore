@@ -37,6 +37,7 @@ coverage/
 debug-*.json
 scratch-*.mjs
 test-*.mjs
+test-*.js
 antigravity-accounts*.json
 antigravity-signature-cache*.json
 antigravity-logs/
