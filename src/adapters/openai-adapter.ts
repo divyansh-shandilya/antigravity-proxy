@@ -378,9 +378,42 @@ export class OpenAIToAntigravityAdapter {
     const fullSystemText = ANTIGRAVITY_SYSTEM_INSTRUCTION + (systemText ? '\n\n' + systemText : '');
 
     return {
-      contents,
+      contents: this.normalizeGeminiContents(contents),
       systemInstruction: fullSystemText ? { parts: [{ text: fullSystemText }] } : undefined,
     };
+  }
+
+  /**
+   * Normalizes contents for Gemini / Antigravity API
+   */
+  private normalizeGeminiContents(rawContents: AntigravityContent[]): AntigravityContent[] {
+    if (!rawContents || rawContents.length === 0) {
+      return [{ role: 'user', parts: [{ text: 'Hello' }] }];
+    }
+
+    const validTurns = rawContents.filter((t) => t.parts && Array.isArray(t.parts) && t.parts.length > 0);
+    if (validTurns.length === 0) {
+      return [{ role: 'user', parts: [{ text: 'Hello' }] }];
+    }
+
+    const merged: AntigravityContent[] = [];
+    for (const turn of validTurns) {
+      if (merged.length > 0 && merged[merged.length - 1].role === turn.role) {
+        merged[merged.length - 1].parts.push(...turn.parts);
+      } else {
+        merged.push({ role: turn.role, parts: [...turn.parts] });
+      }
+    }
+
+    if (merged[0].role === 'model') {
+      merged.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
+    }
+
+    if (merged[merged.length - 1].role === 'model') {
+      merged.push({ role: 'user', parts: [{ text: 'Please continue.' }] });
+    }
+
+    return merged;
   }
 
   /**

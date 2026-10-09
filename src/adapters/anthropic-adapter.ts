@@ -480,6 +480,17 @@ export class AnthropicToAntigravityAdapter {
       }
     }
 
+    if (contents.length === 0) {
+      contents.push({ role: 'user', parts: [{ text: 'Hello' }] });
+    } else {
+      if (contents[0].role === 'model') {
+        contents.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
+      }
+      if (contents[contents.length - 1].role === 'model') {
+        contents.push({ role: 'user', parts: [{ text: 'Please continue.' }] });
+      }
+    }
+
     return { contents, systemInstruction };
   }
 

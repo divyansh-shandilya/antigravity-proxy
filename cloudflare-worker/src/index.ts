@@ -273,6 +273,61 @@ export default {
   },
 };
 
+/**
+ * Normalizes conversation turns for Google Gemini / Antigravity API:
+ * 1. Merges consecutive turns that share the same role (user/model)
+ * 2. Ensures the conversation begins with a 'user' turn
+ * 3. Prevents Google API 400 error: "Requests ending with a model turn are not supported."
+ *    by appending a synthetic user turn if the client ended on assistant (e.g. title-gen, prefill, summary).
+ */
+function normalizeGeminiContents(rawContents: any[]): any[] {
+  if (!rawContents || rawContents.length === 0) {
+    return [{ role: 'user', parts: [{ text: 'Hello' }] }];
+  }
+
+  // Filter out any turn with completely empty parts
+  const validTurns = rawContents.filter((t) => t.parts && Array.isArray(t.parts) && t.parts.length > 0);
+  if (validTurns.length === 0) {
+    return [{ role: 'user', parts: [{ text: 'Hello' }] }];
+  }
+
+  // Merge consecutive turns with the same role
+  const merged: any[] = [];
+  for (const turn of validTurns) {
+    if (merged.length > 0 && merged[merged.length - 1].role === turn.role) {
+      merged[merged.length - 1].parts.push(...turn.parts);
+    } else {
+      merged.push({ role: turn.role, parts: [...turn.parts] });
+    }
+  }
+
+  // Clean parts inside each turn to ensure no empty text entries
+  for (const turn of merged) {
+    turn.parts = turn.parts.filter((p: any) => {
+      if (typeof p.text === 'string') return p.text.length > 0;
+      return true;
+    });
+    if (turn.parts.length === 0) {
+      turn.parts.push({ text: ' ' });
+    }
+  }
+
+  // 1. Gemini requires the conversation to start with a 'user' turn
+  if (merged[0].role === 'model') {
+    merged.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
+  }
+
+  // 2. Gemini strictly rejects requests ending with a 'model' turn:
+  // "Requests ending with a model turn are not supported."
+  // Many chat clients send the full chat history ending with assistant for background title generation,
+  // summarization, or prefill. We append a synthetic user prompt to satisfy Gemini's turn requirements.
+  if (merged[merged.length - 1].role === 'model') {
+    merged.push({ role: 'user', parts: [{ text: 'Please continue.' }] });
+  }
+
+  return merged;
+}
+
 // ============================================================================
 // OPENAI ADAPTER
 // ============================================================================
@@ -285,7 +340,7 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
   const projectId = env.ANTIGRAVITY_PROJECT_ID || DEFAULT_PROJECT_ID;
 
   // Convert OpenAI messages to Antigravity format
-  const contents: any[] = [];
+  const rawContents: any[] = [];
   let systemInstruction: any = undefined;
 
   for (const msg of body.messages || []) {
@@ -301,7 +356,7 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
           if (item.type === 'text') parts.push({ text: item.text });
         }
       }
-      contents.push({ role: 'user', parts });
+      rawContents.push({ role: 'user', parts });
     } else if (msg.role === 'assistant') {
       const parts: any[] = [];
       if (msg.content) parts.push({ text: msg.content });
@@ -317,7 +372,7 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
           } catch {}
         }
       }
-      contents.push({ role: 'model', parts });
+      rawContents.push({ role: 'model', parts });
     } else if (msg.role === 'tool') {
       let parsed = {};
       try {
@@ -325,12 +380,14 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
       } catch {
         parsed = { result: msg.content };
       }
-      contents.push({
+      rawContents.push({
         role: 'user',
         parts: [{ functionResponse: { name: msg.name || 'tool_response', response: parsed } }],
       });
     }
   }
+
+  const contents = normalizeGeminiContents(rawContents);
 
   // Convert Tools with strict protobuf sanitization
   let tools: any[] | undefined = undefined;
@@ -451,7 +508,7 @@ async function handleAnthropicMessages(request: Request, env: Env): Promise<Resp
   }
 
   // Contents
-  const contents: any[] = [];
+  const rawContents: any[] = [];
   for (const msg of body.messages || []) {
     const parts: any[] = [];
     if (typeof msg.content === 'string') {
@@ -475,8 +532,10 @@ async function handleAnthropicMessages(request: Request, env: Env): Promise<Resp
         }
       }
     }
-    contents.push({ role: msg.role === 'assistant' ? 'model' : 'user', parts });
+    rawContents.push({ role: msg.role === 'assistant' ? 'model' : 'user', parts });
   }
+
+  const contents = normalizeGeminiContents(rawContents);
 
   // Tools with strict protobuf sanitization
   let tools: any[] | undefined = undefined;
