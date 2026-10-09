@@ -647,12 +647,152 @@ function createOpenAISSEStream(
   const reader = upstream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let hasSentRole = false;
+  let finishReasonEmitted = false;
+
+  const processChunk = (jsonStr: string, controller: ReadableStreamDefaultController<Uint8Array>) => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      const candidate = parsed.response?.candidates?.[0] || parsed.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+
+      for (const part of parts) {
+        if (part.thought || part.thinking) {
+          const delta: any = { reasoning_content: part.text || '' };
+          if (!hasSentRole) {
+            hasSentRole = true;
+            delta.role = 'assistant';
+          }
+          const chunk = {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta,
+                finish_reason: null,
+              },
+            ],
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        } else if (part.text) {
+          const delta: any = { content: part.text };
+          if (!hasSentRole) {
+            hasSentRole = true;
+            delta.role = 'assistant';
+          }
+          const chunk = {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta,
+                finish_reason: null,
+              },
+            ],
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        } else if (part.functionCall) {
+          const delta: any = {
+            tool_calls: [
+              {
+                index: 0,
+                id: `call_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+                type: 'function',
+                function: {
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args || {}),
+                },
+              },
+            ],
+          };
+          if (!hasSentRole) {
+            hasSentRole = true;
+            delta.role = 'assistant';
+          }
+          const chunk = {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta,
+                finish_reason: null,
+              },
+            ],
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        }
+      }
+
+      // If upstream candidate provided finishReason, emit the stop chunk
+      const rawFinish = candidate?.finishReason;
+      if (rawFinish && !finishReasonEmitted) {
+        finishReasonEmitted = true;
+        let finishReason = 'stop';
+        if (rawFinish === 'MAX_TOKENS') finishReason = 'length';
+        else if (rawFinish === 'SAFETY' || rawFinish === 'RECITATION') finishReason = 'content_filter';
+
+        const stopChunk = {
+          id: completionId,
+          object: 'chat.completion.chunk',
+          created,
+          model,
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              finish_reason: finishReason,
+            },
+          ],
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(stopChunk)}\n\n`));
+      }
+    } catch {}
+  };
 
   return new ReadableStream({
     async pull(controller) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
+          // Flush any remaining buffer line
+          if (buffer.trim()) {
+            const trimmed = buffer.trim();
+            if (trimmed.startsWith('data:')) {
+              const jsonStr = trimmed.replace(/^data:\s*/, '');
+              if (jsonStr && jsonStr !== '[DONE]') {
+                processChunk(jsonStr, controller);
+              }
+            }
+          }
+
+          // Ensure a final finish_reason: "stop" chunk is sent so client UIs know generation has stopped
+          if (!finishReasonEmitted) {
+            finishReasonEmitted = true;
+            const stopChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {},
+                  finish_reason: 'stop',
+                },
+              ],
+            };
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(stopChunk)}\n\n`));
+          }
+
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
           return;
@@ -667,48 +807,7 @@ function createOpenAISSEStream(
           if (!trimmed.startsWith('data:')) continue;
           const jsonStr = trimmed.replace(/^data:\s*/, '');
           if (!jsonStr || jsonStr === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const candidate = parsed.response?.candidates?.[0] || parsed.candidates?.[0];
-            const parts = candidate?.content?.parts || [];
-
-            for (const part of parts) {
-              if (part.thought || part.thinking) {
-                // Stream live thinking/reasoning to OpenCode / Cursor
-                const chunk = {
-                  id: completionId,
-                  object: 'chat.completion.chunk',
-                  created,
-                  model,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: { reasoning_content: part.text || '' },
-                      finish_reason: null,
-                    },
-                  ],
-                };
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-              } else if (part.text) {
-                // Stream standard response tokens
-                const chunk = {
-                  id: completionId,
-                  object: 'chat.completion.chunk',
-                  created,
-                  model,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: { content: part.text },
-                      finish_reason: null,
-                    },
-                  ],
-                };
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-              }
-            }
-          } catch {}
+          processChunk(jsonStr, controller);
         }
       }
     },
@@ -754,10 +853,12 @@ function createAnthropicSSEStream(
         const { done, value } = await reader.read();
         if (done) {
           if (thinkingBlockStarted && !thinkingBlockStopped) {
+            thinkingBlockStopped = true;
             controller.enqueue(
               encoder.encode(`event: content_block_stop\ndata: {"type":"content_block_stop","index":${currentBlockIndex}}\n\n`)
             );
-          } else if (textBlockStarted) {
+          }
+          if (textBlockStarted) {
             controller.enqueue(
               encoder.encode(`event: content_block_stop\ndata: {"type":"content_block_stop","index":${currentBlockIndex}}\n\n`)
             );
