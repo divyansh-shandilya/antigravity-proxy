@@ -43,7 +43,10 @@ const MODELS_LIST = [
 ];
 
 function resolveInternalModel(model: string): string {
-  let cleaned = model.replace(/^antigravity-/, '').replace(/:antigravity$/, '');
+  let cleaned = model
+    .replace(/^([a-zA-Z0-9_-]+)\//, '') // strip provider prefix like anticloud/, openrouter/, etc.
+    .replace(/^antigravity-/, '')
+    .replace(/:antigravity$/, '');
   if (cleaned === 'gemini-3.8-flash' || cleaned === 'gemini-3-flash') {
     return 'gemini-3-flash';
   }
