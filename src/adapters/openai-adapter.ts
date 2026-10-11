@@ -82,6 +82,7 @@ interface AntigravityContent {
   role: 'user' | 'model';
   parts: Array<{
     text?: string;
+    inlineData?: { mimeType: string; data: string };
     thoughtSignature?: string;
     thought_signature?: string;
     functionCall?: { name: string; args: Record<string, unknown> };
@@ -316,8 +317,31 @@ export class OpenAIToAntigravityAdapter {
           for (const part of msg.content) {
             if (part.type === 'text' && part.text) {
               parts.push({ text: part.text });
+            } else if (part.type === 'image_url' || (part as any).image_url) {
+              const url = typeof (part as any).image_url === 'string'
+                ? (part as any).image_url
+                : (part as any).image_url?.url;
+              if (typeof url === 'string' && url.startsWith('data:')) {
+                const match = url.match(/^data:([^;,]+)(?:;charset=[^;,]+)?;base64,(.+)$/s);
+                if (match) {
+                  parts.push({
+                    inlineData: {
+                      mimeType: match[1] || 'image/png',
+                      data: match[2].trim(),
+                    },
+                  });
+                }
+              }
+            } else if (((part as any).type === 'image' || (part as any).source) && (part as any).source?.data) {
+              parts.push({
+                inlineData: {
+                  mimeType: (part as any).source.media_type || 'image/png',
+                  data: (part as any).source.data,
+                },
+              });
+            } else if ((part as any).inlineData && (part as any).inlineData.data) {
+              parts.push({ inlineData: (part as any).inlineData });
             }
-            // TODO: Handle image_url if needed
           }
         }
 

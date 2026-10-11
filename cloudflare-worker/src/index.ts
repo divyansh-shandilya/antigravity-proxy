@@ -343,6 +343,78 @@ function normalizeGeminiContents(rawContents: any[]): any[] {
 // OPENAI ADAPTER
 // ============================================================================
 
+async function parseOpenAIContentPart(item: any): Promise<any | null> {
+  if (!item) return null;
+  if (typeof item === 'string') return { text: item };
+
+  // 1. Text part
+  if (item.type === 'text' || typeof item.text === 'string') {
+    return { text: item.text || '' };
+  }
+
+  // 2. OpenAI Image URL part
+  // Format A: { type: 'image_url', image_url: { url: 'data:image/...;base64,...' } }
+  // Format B: { type: 'image_url', image_url: 'data:image/...;base64,...' }
+  // Format C: { image_url: ... }
+  const imgUrl = typeof item.image_url === 'string'
+    ? item.image_url
+    : item.image_url?.url || item.url;
+
+  if (typeof imgUrl === 'string' && imgUrl) {
+    if (imgUrl.startsWith('data:')) {
+      const match = imgUrl.match(/^data:([^;,]+)(?:;charset=[^;,]+)?;base64,(.+)$/s);
+      if (match) {
+        return {
+          inlineData: {
+            mimeType: match[1] || 'image/png',
+            data: match[2].trim(),
+          },
+        };
+      }
+    } else if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+      try {
+        const res = await fetch(imgUrl);
+        if (res.ok) {
+          const mimeType = res.headers.get('content-type') || 'image/png';
+          const buffer = await res.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i += 8192) {
+            binary += String.fromCharCode.apply(
+              null,
+              bytes.subarray(i, Math.min(i + 8192, bytes.byteLength)) as unknown as number[]
+            );
+          }
+          return {
+            inlineData: {
+              mimeType,
+              data: btoa(binary),
+            },
+          };
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Anthropic-style image block inside OpenAI message:
+  // { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '...' } }
+  if ((item.type === 'image' || item.source) && item.source?.data) {
+    return {
+      inlineData: {
+        mimeType: item.source.media_type || 'image/png',
+        data: item.source.data,
+      },
+    };
+  }
+
+  // 4. Direct inlineData: { inlineData: { mimeType, data } }
+  if (item.inlineData && item.inlineData.data) {
+    return { inlineData: item.inlineData };
+  }
+
+  return null;
+}
+
 async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
   const body = (await request.json()) as any;
   const requestedModel = body.model || 'claude-sonnet-4-6';
@@ -364,7 +436,8 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
         parts.push({ text: msg.content });
       } else if (Array.isArray(msg.content)) {
         for (const item of msg.content) {
-          if (item.type === 'text') parts.push({ text: item.text });
+          const parsed = await parseOpenAIContentPart(item);
+          if (parsed) parts.push(parsed);
         }
       }
       rawContents.push({ role: 'user', parts });
