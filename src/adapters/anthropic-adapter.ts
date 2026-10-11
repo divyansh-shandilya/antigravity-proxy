@@ -12,6 +12,7 @@ import {
   GEMINI_CLI_ENDPOINT,
   ANTIGRAVITY_HEADERS,
   GEMINI_CLI_HEADERS,
+  SKIP_THOUGHT_SIGNATURE,
   type HeaderStyle,
 } from '../lib/constants.js';
 import { createLogger } from '../lib/logger.js';
@@ -123,6 +124,8 @@ interface AntigravityPart {
     name: string;
     response: Record<string, unknown>;
   };
+  thoughtSignature?: string;
+  thought_signature?: string;
 }
 
 interface AntigravityContent {
@@ -411,6 +414,7 @@ export class AnthropicToAntigravityAdapter {
             name: block.name,
             args: block.input || {},
           },
+          thoughtSignature: (block as any).thoughtSignature || (block as any).thought_signature || SKIP_THOUGHT_SIGNATURE,
         });
       } else if (block.type === 'tool_result') {
         const toolName = toolUseIdToName.get(block.tool_use_id) || `tool_${block.tool_use_id}`;
@@ -488,6 +492,15 @@ export class AnthropicToAntigravityAdapter {
       }
       if (contents[contents.length - 1].role === 'model') {
         contents.push({ role: 'user', parts: [{ text: 'Please continue.' }] });
+      }
+    }
+
+    // Ensure all functionCall parts have a thoughtSignature to satisfy Gemini 3.x
+    for (const turn of contents) {
+      for (const part of turn.parts) {
+        if (part.functionCall && !part.thoughtSignature && !part.thought_signature) {
+          part.thoughtSignature = SKIP_THOUGHT_SIGNATURE;
+        }
       }
     }
 

@@ -325,6 +325,17 @@ function normalizeGeminiContents(rawContents: any[]): any[] {
     merged.push({ role: 'user', parts: [{ text: 'Please continue.' }] });
   }
 
+  // 3. Gemini 3.x strictly requires a thought_signature on every functionCall part:
+  // "Function call is missing a thought_signature in functionCall parts."
+  // We attach the official Google sentinel 'skip_thought_signature_validator' if missing.
+  for (const turn of merged) {
+    for (const part of turn.parts) {
+      if (part.functionCall && !part.thoughtSignature && !part.thought_signature) {
+        part.thoughtSignature = 'skip_thought_signature_validator';
+      }
+    }
+  }
+
   return merged;
 }
 
@@ -368,6 +379,7 @@ async function handleOpenAIChat(request: Request, env: Env): Promise<Response> {
                 name: tc.function.name,
                 args: JSON.parse(tc.function.arguments || '{}'),
               },
+              thoughtSignature: tc.thoughtSignature || tc.thought_signature || 'skip_thought_signature_validator',
             });
           } catch {}
         }
@@ -525,7 +537,10 @@ async function handleAnthropicMessages(request: Request, env: Env): Promise<Resp
             },
           });
         } else if (block.type === 'tool_use') {
-          parts.push({ functionCall: { name: block.name, args: block.input || {} } });
+          parts.push({
+            functionCall: { name: block.name, args: block.input || {} },
+            thoughtSignature: block.thoughtSignature || block.thought_signature || 'skip_thought_signature_validator',
+          });
         } else if (block.type === 'tool_result') {
           const resContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '');
           parts.push({ functionResponse: { name: block.tool_use_id || 'tool_result', response: { content: resContent } } });

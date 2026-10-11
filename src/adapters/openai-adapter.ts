@@ -10,6 +10,7 @@ import {
   GEMINI_CLI_HEADERS,
   GEMINI_CLI_ENDPOINT,
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
+  SKIP_THOUGHT_SIGNATURE,
   type HeaderStyle,
 } from '../lib/constants.js';
 
@@ -81,6 +82,8 @@ interface AntigravityContent {
   role: 'user' | 'model';
   parts: Array<{
     text?: string;
+    thoughtSignature?: string;
+    thought_signature?: string;
     functionCall?: { name: string; args: Record<string, unknown> };
     functionResponse?: { name: string; response: Record<string, unknown> };
   }>;
@@ -336,6 +339,7 @@ export class OpenAIToAntigravityAdapter {
                   name: toolCall.function.name,
                   args,
                 },
+                thoughtSignature: (toolCall as any).thoughtSignature || (toolCall as any).thought_signature || SKIP_THOUGHT_SIGNATURE,
               });
             } catch (e) {
               log.warn('Failed to parse tool call arguments', {
@@ -411,6 +415,15 @@ export class OpenAIToAntigravityAdapter {
 
     if (merged[merged.length - 1].role === 'model') {
       merged.push({ role: 'user', parts: [{ text: 'Please continue.' }] });
+    }
+
+    // Ensure all functionCall parts have a thoughtSignature to satisfy Gemini 3.x
+    for (const turn of merged) {
+      for (const part of turn.parts) {
+        if (part.functionCall && !part.thoughtSignature && !part.thought_signature) {
+          part.thoughtSignature = SKIP_THOUGHT_SIGNATURE;
+        }
+      }
     }
 
     return merged;
